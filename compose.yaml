@@ -1,0 +1,63 @@
+services:
+  metadata-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dashboard_lab
+      POSTGRES_USER: dashboard_lab
+      POSTGRES_PASSWORD: dashboard_lab_dev
+    ports:
+      - "${METADATA_DB_PORT:-15431}:5432"
+    volumes:
+      - metadata-db-data:/var/lib/postgresql/data
+      - ./db/metadata:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dashboard_lab -d dashboard_lab"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  analytics-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: profit_demo
+      POSTGRES_USER: demo_readonly
+      POSTGRES_PASSWORD: demo_password
+    ports:
+      - "${ANALYTICS_DB_PORT:-15432}:5432"
+    volumes:
+      - analytics-db-data:/var/lib/postgresql/data
+      - ./demo_db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo_readonly -d profit_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      APP_PORT: "8080"
+      METADATA_DATABASE_URL: postgres://dashboard_lab:dashboard_lab_dev@metadata-db:5432/dashboard_lab?sslmode=disable
+      ANALYTICS_DATABASE_URL: postgres://demo_readonly:demo_password@analytics-db:5432/profit_demo?sslmode=disable
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      metadata-db:
+        condition: service_healthy
+      analytics-db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_BACKEND_URL: http://localhost:${BACKEND_PORT:-8080}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - backend
+
+volumes:
+  metadata-db-data:
+  analytics-db-data:
