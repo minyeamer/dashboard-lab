@@ -10,10 +10,20 @@ import (
 	"time"
 
 	"github.com/minyeamer/dashboard-lab/backend/internal/dashboard"
+	"github.com/minyeamer/dashboard-lab/backend/internal/query"
 )
 
 type fakeDashboardStore struct {
 	items []dashboard.Dashboard
+}
+
+type fakeQueryRunner struct {
+	frame query.TableFrame
+	err   error
+}
+
+func (r fakeQueryRunner) Query(context.Context, string) (query.TableFrame, error) {
+	return r.frame, r.err
 }
 
 func (s fakeDashboardStore) List(context.Context) ([]dashboard.Dashboard, error) {
@@ -33,7 +43,7 @@ func TestHealth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	res := httptest.NewRecorder()
 
-	newHandler(fakeDashboardStore{}).ServeHTTP(res, req)
+	newHandler(fakeDashboardStore{}, fakeQueryRunner{}).ServeHTTP(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
@@ -51,7 +61,7 @@ func TestListDashboards(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboards", nil)
 	res := httptest.NewRecorder()
 
-	newHandler(store).ServeHTTP(res, req)
+	newHandler(store, fakeQueryRunner{}).ServeHTTP(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
@@ -65,7 +75,7 @@ func TestGetDashboardReturnsNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboards/unknown", nil)
 	res := httptest.NewRecorder()
 
-	newHandler(fakeDashboardStore{}).ServeHTTP(res, req)
+	newHandler(fakeDashboardStore{}, fakeQueryRunner{}).ServeHTTP(res, req)
 
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, res.Code)
@@ -76,5 +86,35 @@ func TestGetDashboardReturnsNotFound(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "dashboard not found") {
 		t.Fatalf("unexpected body %q", body)
+	}
+}
+
+func TestRunQuery(t *testing.T) {
+	runner := fakeQueryRunner{frame: query.TableFrame{
+		Fields: []query.Field{{Name: "name", Type: "string"}},
+		Rows:   [][]any{{"dashboard-lab"}},
+	}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(`{"sql":"SELECT name FROM items"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+
+	newHandler(fakeDashboardStore{}, runner).ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+	if got := res.Body.String(); !strings.Contains(got, "dashboard-lab") {
+		t.Fatalf("expected query result in response, got %q", got)
+	}
+}
+
+func TestRunQueryRejectsNonSelectStatement(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(`{"sql":"DELETE FROM items"}`))
+	res := httptest.NewRecorder()
+
+	newHandler(fakeDashboardStore{}, fakeQueryRunner{err: query.ErrInvalidStatement}).ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
 	}
 }

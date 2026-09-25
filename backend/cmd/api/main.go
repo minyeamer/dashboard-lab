@@ -8,9 +8,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/minyeamer/dashboard-lab/backend/internal/dashboard"
+	"github.com/minyeamer/dashboard-lab/backend/internal/query"
 )
 
 type healthResponse struct {
@@ -38,9 +40,20 @@ func main() {
 		log.Fatalf("ping metadata database: %v", err)
 	}
 
+	analyticsDB, err := sql.Open("pgx", os.Getenv("ANALYTICS_DATABASE_URL"))
+	if err != nil {
+		log.Fatalf("open analytics database: %v", err)
+	}
+	defer analyticsDB.Close()
+
+	if err := analyticsDB.PingContext(context.Background()); err != nil {
+		log.Fatalf("ping analytics database: %v", err)
+	}
+
 	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: newHandler(dashboard.NewPostgresStore(db)),
+		Addr:              ":" + port,
+		Handler:           newHandler(dashboard.NewPostgresStore(db), query.NewPostgresRunner(analyticsDB)),
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	log.Printf("dashboard-lab API listening on %s", server.Addr)
@@ -51,12 +64,43 @@ func health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 }
 
-func newHandler(store dashboard.Store) http.Handler {
+func newHandler(store dashboard.Store, runner query.Runner) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", health)
 	mux.HandleFunc("GET /api/v1/dashboards", listDashboards(store))
 	mux.HandleFunc("GET /api/v1/dashboards/{uid}", getDashboard(store))
+	mux.HandleFunc("POST /api/v1/query", runQuery(runner))
 	return cors(mux)
+}
+
+type queryRequest struct {
+	SQL string `json:"sql"`
+}
+
+func runQuery(runner query.Runner) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var request queryRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			writeError(w, http.StatusBadRequest, "request body must contain SQL")
+			return
+		}
+
+		frame, err := runner.Query(r.Context(), request.SQL)
+		if errors.Is(err, query.ErrInvalidStatement) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if query.IsTimeout(err) {
+			writeError(w, http.StatusGatewayTimeout, "query timed out after 3 seconds")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, query.FormatError(err))
+			return
+		}
+
+		writeJSON(w, http.StatusOK, frame)
+	}
 }
 
 func listDashboards(store dashboard.Store) http.HandlerFunc {

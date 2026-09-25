@@ -20,7 +20,7 @@ header > p, .muted { color: #4b5563; }
 
 .dashboard-list { display: grid; gap: 16px; margin-top: 40px; }
 
-.dashboard-card, .dashboard-detail { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 24px; }
+.dashboard-card, .dashboard-detail, .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 24px; }
 
 .dashboard-card { color: inherit; text-decoration: none; }
 
@@ -35,3 +35,49 @@ header > p, .muted { color: #4b5563; }
 .back-link { color: #4b5563; display: inline-block; margin-bottom: 24px; text-decoration: none; }
 
 .error-message { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; margin-top: 32px; padding: 16px; }
+
+.panel { margin-top: 24px; }
+
+.panel-heading { align-items: flex-start; display: flex; gap: 24px; justify-content: space-between; }
+
+.panel-heading h2 { font-size: 1.25rem; margin-bottom: 0; }
+
+.panel-heading span { color: #6b7280; font-size: 0.875rem; }
+
+.table-scroll { overflow-x: auto; }
+
+table { border-collapse: collapse; margin-top: 24px; min-width: 100%; text-align: left; }
+
+th, td { border-bottom: 1px solid #e5e7eb; padding: 12px 16px; white-space: nowrap; }
+
+th { background: #f9fafb; color: #4b5563; font-size: 0.875rem; font-weight: 600; }
+
+td { font-variant-numeric: tabular-nums; }
+
+th:not(:first-child), .numeric-cell { text-align: right; }
+
+.sort-button { align-items: center; background: transparent; border: 0; color: inherit; cursor: pointer; display: inline-flex; font: inherit; gap: 6px; padding: 0; }
+
+th.numeric-cell .sort-button { justify-content: flex-end; width: 100%; }
+
+.sort-indicator { color: #9ca3af; font-size: 0.75rem; }
+
+.sort-button:hover .sort-indicator { color: #4b5563; }
+
+tfoot td { border-bottom: 0; border-top: 2px solid #e5e7eb; font-weight: 700; }
+
+.total-label { text-align: left; }
+
+.table-pagination { align-items: center; color: #6b7280; display: flex; font-size: 0.875rem; justify-content: space-between; margin-top: 16px; }
+
+.table-pagination div { display: flex; gap: 8px; }
+
+.table-pagination button { background: #fff; border: 1px solid #d1d5db; border-radius: 4px; color: #374151; cursor: pointer; font: inherit; padding: 6px 10px; }
+
+.table-pagination button:disabled { color: #9ca3af; cursor: not-allowed; }
+
+.empty-panel-state p { color: #4b5563; margin-bottom: 0; }
+
+@media (max-width: 640px) {
+  .panel-heading { flex-direction: column; gap: 8px; }
+}
