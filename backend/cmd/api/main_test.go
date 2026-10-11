@@ -30,6 +30,47 @@ func (s fakeDashboardStore) List(context.Context) ([]dashboard.Dashboard, error)
 	return s.items, nil
 }
 
+func (s fakeDashboardStore) Update(_ context.Context, uid string, d dashboard.Document) (dashboard.Dashboard, error) {
+	for _, item := range s.items {
+		if item.UID == uid {
+			item.Title = d.Title
+			item.Description = d.Description
+			item.Panels = d.Panels
+			return item, nil
+		}
+	}
+	return dashboard.Dashboard{}, dashboard.ErrNotFound
+}
+
+func TestUpdateDashboard(t *testing.T) {
+	cases := []struct {
+		name, uid, body string
+		status          int
+	}{
+		{"save", "example", `{"title":"Updated","description":"","panels":[{"id":"p1","type":"table","title":"Panel","sql":"SELECT 1"}]}`, 200},
+		{"empty panels", "example", `{"title":"Updated","description":"","panels":[]}`, 200},
+		{"missing", "missing", `{"title":"Updated","panels":[]}`, 404},
+		{"blank title", "example", `{"title":"  ","panels":[]}`, 400},
+		{"null panels", "example", `{"title":"Updated","panels":null}`, 400},
+		{"unknown property", "example", `{"title":"Updated","panels":[],"uid":"other"}`, 400},
+		{"multiple documents", "example", `{"title":"Updated","panels":[]} {}`, 400},
+		{"malformed", "example", `{`, 400},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := fakeDashboardStore{items: []dashboard.Dashboard{{UID: "example"}}}
+			res := httptest.NewRecorder()
+			newHandler(store, fakeQueryRunner{}).ServeHTTP(res, httptest.NewRequest(http.MethodPut, "/api/v1/dashboards/"+tc.uid, strings.NewReader(tc.body)))
+			if res.Code != tc.status {
+				t.Fatalf("got %d (%s), want %d", res.Code, res.Body.String(), tc.status)
+			}
+			if tc.status == 200 && !strings.Contains(res.Body.String(), `"title":"Updated"`) {
+				t.Fatal(res.Body.String())
+			}
+		})
+	}
+}
+
 func (s fakeDashboardStore) GetByUID(_ context.Context, uid string) (dashboard.Dashboard, error) {
 	for _, item := range s.items {
 		if item.UID == uid {

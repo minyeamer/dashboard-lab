@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -69,6 +70,7 @@ func newHandler(store dashboard.Store, runner query.Runner) http.Handler {
 	mux.HandleFunc("GET /api/health", health)
 	mux.HandleFunc("GET /api/v1/dashboards", listDashboards(store))
 	mux.HandleFunc("GET /api/v1/dashboards/{uid}", getDashboard(store))
+	mux.HandleFunc("PUT /api/v1/dashboards/{uid}", updateDashboard(store))
 	mux.HandleFunc("POST /api/v1/query", runQuery(runner))
 	return cors(mux)
 }
@@ -135,6 +137,37 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func updateDashboard(store dashboard.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		var document dashboard.Document
+		if err := decoder.Decode(&document); err != nil {
+			writeError(w, http.StatusBadRequest, "저장할 JSON 형식이 올바르지 않습니다.")
+			return
+		}
+		if err := decoder.Decode(&struct{}{}); err != io.EOF {
+			writeError(w, http.StatusBadRequest, "JSON 문서는 하나만 전송해 주세요.")
+			return
+		}
+		if err := document.Validate(); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item, err := store.Update(r.Context(), r.PathValue("uid"), document)
+		if errors.Is(err, dashboard.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "dashboard not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "대시보드를 저장하지 못했습니다. 다시 시도해 주세요.")
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
